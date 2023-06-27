@@ -1,9 +1,13 @@
 import os
+import time
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse, urljoin, urlencode, urlunparse, parse_qs
-import time
+from urllib.parse import urlparse, urljoin, parse_qs, unquote, urlencode, urlunparse
 from PyQt5.QtWidgets import QApplication, QFileDialog
+
+
+PAGE_PARAMETERS = ['page', 'search_page', 'pagi', 'pg']
+QUERY_PARAMETERS = ["query", "k", "q", "phrase", "wallpaper"]
 
 
 def generate_urls(base_url, max_page):
@@ -11,10 +15,10 @@ def generate_urls(base_url, max_page):
     parsed_url = urlparse(base_url)
     query_params = parse_qs(parsed_url.query)
 
-    start_page = int(query_params.get('page', [1])[0])
+    start_page = next((int(query_params[key][0]) for key in PAGE_PARAMETERS if key in query_params), 1)
 
     for page in range(start_page, max_page + 1):
-        query_params['page'] = [str(page)]
+        query_params[PAGE_PARAMETERS[0]] = [str(page)]
         encoded_query = urlencode(query_params, doseq=True)
         parsed_url = parsed_url._replace(query=encoded_query)
         updated_url = urlunparse(parsed_url)
@@ -85,10 +89,28 @@ def download_images_from_website(website_url, target_directory, minimum_image_si
                 print(f"Error accessing image: {e}")
 
 
-def get_query_text(url):
+def get_query_text(url, query_parameters):
     parsed_url = urlparse(url)
     query_params = parse_qs(parsed_url.query)
-    query_text = query_params.get('query', [''])[0]
+    query_text = ""
+
+    for param in query_parameters:
+        if param in query_params:
+            query_text = unquote(query_params[param][0])
+            break
+
+    if not query_text:
+        # Extract query text from URL path
+        path_parts = parsed_url.path.split("/")
+        for i, part in enumerate(path_parts):
+            if part in query_parameters and i + 1 < len(path_parts):
+                query_text = unquote(path_parts[i + 1])
+                break
+
+    if not query_text:
+        # If query_text is still empty, use a default folder name
+        query_text = "images"
+
     return query_text
 
 
@@ -97,12 +119,17 @@ def get_valid_link(prompt):
         link = input(prompt)
 
         if link:
-            response = requests.get(link)
-            if response.status_code == 200:
-                print("Valid link!")
-                return link
-            else:
+            try:
+                parsed_url = urlparse(link)
+                if parsed_url.scheme and parsed_url.netloc:
+                    print("Valid link!")
+                    return link
+                else:
+                    print("Invalid link!")
+            except ValueError:
                 print("Invalid link!")
+        else:
+            print("Invalid link!")
 
 
 def choose_output_directory():
@@ -142,30 +169,35 @@ def get_additional_links():
     return links
 
 
-link = get_valid_link("Type in a link: ")
-target_directory = choose_output_directory()
-max_page = get_integer_input("Enter the maximum page number: ")
-minimum_image_size = get_integer_input("Enter the minimum picture size in KB: ")
-delay = get_integer_input("Enter the delay in seconds: ")
+if __name__ == "__main__":
+    link = get_valid_link("Type in a link: ")
+    target_directory = choose_output_directory()
+    max_page = get_integer_input("Enter the maximum page number: ")
+    minimum_image_size = get_integer_input("Enter the minimum picture size in KB: ")
+    delay = get_integer_input("Enter the delay in seconds: ")
 
-add_more_links = get_yes_no_input("Do you want to add more links?")
-additional_links = []
-if add_more_links:
-    additional_links = get_additional_links()
+    domain = urlparse(link).netloc
+    query_text = get_query_text(link, QUERY_PARAMETERS)
 
-download_single_page = get_yes_no_input("Do you want to download images only from this exact page?")
-generated_urls = []
-if download_single_page:
-    generated_urls.append(link)
-else:
-    generated_urls = generate_urls(link, max_page) + additional_links
+    if query_text is None:
+        print("Query text not found in URL.")
 
-for i, url in enumerate(generated_urls, 1):
-    domain = urlparse(url).netloc
-    query_text = get_query_text(url)
+    folder_name = query_text
     domain_directory = os.path.join(target_directory, domain)
-    query_directory = os.path.join(domain_directory, query_text)
+    query_directory = os.path.join(domain_directory, folder_name)
 
     os.makedirs(query_directory, exist_ok=True)
-    print(f"\nDownloading images from page {i} to directory: {query_directory}")
-    download_images_from_website(url, query_directory, minimum_image_size, delay)
+    print(f"\nDownloading images to directory: {query_directory}")
+
+    if "page" in parse_qs(urlparse(link).query):
+        page_number = int(parse_qs(urlparse(link).query)["page"][0])
+        if page_number <= max_page:
+            generated_urls = [link]
+        else:
+            print("Page indicator exceeds the maximum page number.")
+    else:
+        generated_urls = generate_urls(link, max_page)
+
+    for i, url in enumerate(generated_urls, 1):
+        print(f"\nDownloading images from page {i}...")
+        download_images_from_website(url, query_directory, minimum_image_size, delay)

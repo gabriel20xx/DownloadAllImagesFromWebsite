@@ -120,13 +120,45 @@ def get_integer_input(prompt):
             print("Invalid input! Please enter an integer.")
 
 
-link = get_valid_link("Type in link: ")
+def get_yes_no_input(prompt):
+    while True:
+        choice = input(prompt + " (yes/no): ").lower()
+        if choice == "yes":
+            return True
+        elif choice == "no":
+            return False
+        else:
+            print("Invalid choice! Please enter 'yes' or 'no'.")
+
+
+def get_additional_links():
+    links = []
+    while True:
+        link = get_valid_link("Type in an additional link (leave blank to finish): ")
+        if link:
+            links.append(link)
+        else:
+            break
+    return links
+
+
+link = get_valid_link("Type in a link: ")
 target_directory = choose_output_directory()
 max_page = get_integer_input("Enter the maximum page number: ")
 minimum_image_size = get_integer_input("Enter the minimum picture size in KB: ")
 delay = get_integer_input("Enter the delay in seconds: ")
 
-generated_urls = generate_urls(link, max_page)
+add_more_links = get_yes_no_input("Do you want to add more links?")
+additional_links = []
+if add_more_links:
+    additional_links = get_additional_links()
+
+download_single_page = get_yes_no_input("Do you want to download images only from this exact page?")
+generated_urls = []
+if download_single_page:
+    generated_urls.append(link)
+else:
+    generated_urls = generate_urls(link, max_page) + additional_links
 
 for i, url in enumerate(generated_urls, 1):
     domain = urlparse(url).netloc

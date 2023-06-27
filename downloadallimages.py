@@ -5,9 +5,6 @@ from urllib.parse import urlparse, urljoin, urlencode, urlunparse, parse_qs
 import time
 from PyQt5.QtWidgets import QApplication, QFileDialog
 
-# Create the application
-app = QApplication([])
-
 
 def generate_urls(base_url, max_page):
     urls = []
@@ -73,8 +70,7 @@ def download_images_from_website(website_url, target_directory, minimum_image_si
 
         if img_url:
             absolute_img_url = urljoin(website_url, img_url)
-            print(f"\nPage {i} from {max_page}")
-            print(f"Checking image: {absolute_img_url}")
+            print(f"\nChecking image: {absolute_img_url}")
             try:
                 image_response = requests.head(absolute_img_url)
                 image_size = int(image_response.headers.get("content-length", 0))
@@ -89,46 +85,55 @@ def download_images_from_website(website_url, target_directory, minimum_image_si
                 print(f"Error accessing image: {e}")
 
 
-# Define output directory
-while True:
-    print("Choose your output folder")
+def get_query_text(url):
+    parsed_url = urlparse(url)
+    query_params = parse_qs(parsed_url.query)
+    query_text = query_params.get('query', [''])[0]
+    return query_text
+
+
+def get_valid_link(prompt):
+    while True:
+        link = input(prompt)
+
+        if link:
+            response = requests.get(link)
+            if response.status_code == 200:
+                print("Valid link!")
+                return link
+            else:
+                print("Invalid link!")
+
+
+def choose_output_directory():
+    app = QApplication([])
     target_directory = QFileDialog.getExistingDirectory(None, "Select output folder")
-
-    if target_directory:
-        break
+    return target_directory
 
 
-while True:
-    link = input("Type in link: ")
-
-    if link:
-        break
-
-
-while True:
-    max_page = int(input("Enter the maximum page number: "))
-
-    if max_page:
-        break
-
-while True:
-    minimum_image_size = int(input("Type minimum picture size in kb: "))
-
-    if minimum_image_size:
-        break
+def get_integer_input(prompt):
+    while True:
+        try:
+            value = int(input(prompt))
+            return value
+        except ValueError:
+            print("Invalid input! Please enter an integer.")
 
 
-while True:
-    delay = int(input("Type delay in seconds: "))
-
-    if delay:
-        break
-
+link = get_valid_link("Type in link: ")
+target_directory = choose_output_directory()
+max_page = get_integer_input("Enter the maximum page number: ")
+minimum_image_size = get_integer_input("Enter the minimum picture size in KB: ")
+delay = get_integer_input("Enter the delay in seconds: ")
 
 generated_urls = generate_urls(link, max_page)
 
 for i, url in enumerate(generated_urls, 1):
     domain = urlparse(url).netloc
-    target_directory_with_domain = os.path.join(target_directory, domain)
-    print(f"Downloading images from page {i} to directory: {target_directory_with_domain}")
-    download_images_from_website(url, target_directory_with_domain, minimum_image_size, delay)
+    query_text = get_query_text(url)
+    domain_directory = os.path.join(target_directory, domain)
+    query_directory = os.path.join(domain_directory, query_text)
+
+    os.makedirs(query_directory, exist_ok=True)
+    print(f"\nDownloading images from page {i} to directory: {query_directory}")
+    download_images_from_website(url, query_directory, minimum_image_size, delay)

@@ -65,7 +65,6 @@ def download_image(url, directory, max_retries=3):
         print("Download interrupted by user.")
 
 
-
 def download_images_from_website(website_url, target_directory, minimum_image_size, delay):
     # Create target directory if it doesn't exist
     os.makedirs(target_directory, exist_ok=True)

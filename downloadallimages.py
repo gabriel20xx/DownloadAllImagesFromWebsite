@@ -16,7 +16,7 @@ def generate_urls(base_url, start_first_page, max_page):
     query_params = parse_qs(parsed_url.query)
 
     if start_first_page:
-        start_page = 0
+        start_page = 1
     else:
         start_page = next((int(query_params[key][0]) for key in PAGE_PARAMETERS if key in query_params), 1)
 
@@ -75,6 +75,7 @@ def download_images_from_website(website_url, target_directory, minimum_image_si
                       "Chrome/91.0.4472.124 Safari/537.36",
         "Referer": website_url
     }
+    print(f"Website: " + website_url)
 
     try:
         response = requests.get(website_url, headers=headers)

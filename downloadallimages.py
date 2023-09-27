@@ -186,7 +186,7 @@ if __name__ == "__main__":
     if query_text is None:
         print("Query text not found in URL.")
 
-    folder_name = query_texts
+    folder_name = query_text
     query_directory = os.path.join(target_directory, folder_name)
 
     os.makedirs(query_directory, exist_ok=True)

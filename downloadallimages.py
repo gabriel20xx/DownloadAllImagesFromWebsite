@@ -30,27 +30,40 @@ def generate_urls(base_url, start_first_page, max_page):
     return urls
 
 
-def download_image(url, directory):
+def download_image(url, directory, max_retries=3):
     try:
-        response = requests.get(url, stream=True)
-        response.raise_for_status()
+        retries = 0
+        while retries < max_retries:
+            try:
+                response = requests.get(url, stream=True)
+                response.raise_for_status()
 
-        filename = os.path.basename(urlparse(url).path)
-        filepath = os.path.join(directory, filename)
+                filename = os.path.basename(urlparse(url).path)
+                filepath = os.path.join(directory, filename)
 
-        if os.path.exists(filepath):
-            print(f"Skipping image (already exists): {url}")
-            return
+                if os.path.exists(filepath):
+                    print(f"Skipping image (already exists): {url}")
+                    return
 
-        with open(filepath, "wb") as file:
-            for chunk in response.iter_content(chunk_size=8192):
-                file.write(chunk)
+                with open(filepath, "wb") as file:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        file.write(chunk)
 
-        print(f"Downloaded: {url}")
-    except requests.exceptions.RequestException as e:
-        print(f"Error downloading {url}: {e}")
-    except IOError as e:
-        print(f"IOError while saving {url}: {e}")
+                print(f"Downloaded: {url}")
+                break  # Break out of the retry loop if successful
+            except requests.exceptions.RequestException as e:
+                print(f"Error downloading {url}: {e}")
+                retries += 1
+                if retries < max_retries:
+                    print(f"Retrying ({retries}/{max_retries})...")
+                else:
+                    print(f"Max retries reached ({max_retries}). Giving up.")
+                    break
+            except IOError as e:
+                print(f"IOError while saving {url}: {e}")
+    except KeyboardInterrupt:
+        print("Download interrupted by user.")
+
 
 
 def download_images_from_website(website_url, target_directory, minimum_image_size, delay):

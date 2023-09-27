@@ -16,7 +16,7 @@ def generate_urls(base_url, start_first_page, max_page):
     query_params = parse_qs(parsed_url.query)
 
     if start_first_page:
-        start_page = 0
+        start_page = 1
     else:
         start_page = next((int(query_params[key][0]) for key in PAGE_PARAMETERS if key in query_params), 1)
 

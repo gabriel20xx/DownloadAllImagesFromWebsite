@@ -62,6 +62,7 @@ def download_images_from_website(website_url, target_directory, minimum_image_si
                       "Chrome/91.0.4472.124 Safari/537.36",
         "Referer": website_url
     }
+    print(f"Website: " + website_url)
 
     try:
         response = requests.get(website_url, headers=headers)

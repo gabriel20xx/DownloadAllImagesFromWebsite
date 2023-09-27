@@ -10,12 +10,15 @@ PAGE_PARAMETERS = ['page', 'search_page', 'pagi', 'pg']
 QUERY_PARAMETERS = ["query", "k", "q", "phrase", "wallpaper"]
 
 
-def generate_urls(base_url, max_page):
+def generate_urls(base_url, start_first_page, max_page):
     urls = []
     parsed_url = urlparse(base_url)
     query_params = parse_qs(parsed_url.query)
 
-    start_page = next((int(query_params[key][0]) for key in PAGE_PARAMETERS if key in query_params), 1)
+    if start_first_page:
+        start_page = 0
+    else:
+        start_page = next((int(query_params[key][0]) for key in PAGE_PARAMETERS if key in query_params), 1)
 
     for page in range(start_page, max_page + 1):
         query_params[PAGE_PARAMETERS[0]] = [str(page)]
@@ -173,6 +176,7 @@ if __name__ == "__main__":
     link = get_valid_link("Type in a link: ")
     target_directory = choose_output_directory()
     max_page = get_integer_input("Enter the maximum page number: ")
+    start_first_page = get_yes_no_input("Do you wanna start from the first page?")
     minimum_image_size = get_integer_input("Enter the minimum picture size in KB: ")
     delay = get_integer_input("Enter the delay in seconds: ")
 
@@ -190,7 +194,7 @@ if __name__ == "__main__":
     os.makedirs(query_directory, exist_ok=True)
     print(f"\nDownloading images to directory: {query_directory}")
 
-    generated_urls = generate_urls(link, max_page)
+    generated_urls = generate_urls(link, start_first_page, max_page)
 
     for i, url in enumerate(generated_urls, 1):
         print(f"\nDownloading images from page {i}...")

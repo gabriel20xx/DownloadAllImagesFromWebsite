@@ -1,36 +1,43 @@
 import os
 import requests
-from urllib.parse import urljoin, unquote
+from urllib.parse import urljoin, unquote, urlparse
 from seleniumbase import SB
-import re  # For sanitizing filenames
+import re  # For regex operations
 
-# --- Configuration (!!! MUST ADJUST FOR THE TARGET WEBSITE !!!) ---
+# --- Configuration (Using values from user log/previous context) ---
 GALLERY_OVERVIEW_BASE_URL_INPUT = "https://izispicy.com/babes/"
-GALLERY_LINK_SELECTOR = "h1.zag_block>a"  # Selector for links ON THE OVERVIEW page leading to individual galleries
-GALLERY_TITLE_SELECTOR = "h1.zag_block"  # Optional: Selector for the main title WITHIN a gallery page (for folder name)
-IMAGE_SELECTOR = "div.imgbox>a>img"
-GALLERY_NEXT_PAGE_SELECTOR = "#post-list > div:nth-child(6) > div > b:nth-child(3) > a"  # Selector for the "Next Page" button/link WITHIN a single gallery's pagination
-DOWNLOAD_FOLDER = "downloaded_galleries"  # Main folder to save all gallery subfolders
+GALLERY_LINK_SELECTOR = "h1.zag_block > a"
+GALLERY_TITLE_SELECTOR = "h1.zag_block"
+IMAGE_SELECTOR = "div.imgbox > a > img"
+GALLERY_NEXT_PAGE_SELECTOR = (
+    "#post-list > div:nth-child(6) > div > b:nth-child(3) > a"  # From user log
+)
+
+DOWNLOAD_FOLDER = "downloaded_galleries"
 START_HEADLESS = False
-REQUEST_TIMEOUT = 30  # Seconds to wait for image download request
-ELEMENT_WAIT_TIMEOUT = 20  # Default timeout for sb.wait_for_... methods (seconds)
-# Define common image extensions for counting and checking existing files
+REQUEST_TIMEOUT = 30
+ELEMENT_WAIT_TIMEOUT = 20
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff"}
+VIDEO_SKIP_PHRASE = "(VIDEO)"  # <<< Phrase to check for skipping
 # --- End Configuration ---
 
 
+# Helper functions (sanitize_filename, extract_and_format_date, etc.) remain the same...
 def sanitize_filename(name):
-    """Removes or replaces characters invalid for filesystem names."""
     if not isinstance(name, str):
         name = str(name)
     name = re.sub(r'[<>:"/\\|?*]', "_", name)
     name = re.sub(r"[\s_]+", "_", name)
     name = name.strip("_ ")
+    # Avoid making filename just the date if title was only VIDEO skip phrase
+    if name == extract_and_format_date(
+        name
+    ):  # Check if name *only* contains the formatted date
+        return f"{name}_gallery"
     return name if name else "untitled_gallery"
 
 
 def extract_and_format_date(url_string):
-    """Finds sediment/MM/DD in a URL and returns sediment_MM_DD, or None."""
     match = re.search(r"(\d{4})/(\d{2})/(\d{2})", url_string)
     if match:
         year, month, day = match.groups()
@@ -47,10 +54,9 @@ def extract_and_format_date(url_string):
 
 
 def extract_count_from_title(title_string):
-    """Extracts the number from '(XX PICS)' in the title. Returns int or None."""
     if not title_string:
         return None
-    match = re.search(r"\((\d+)\s*PICS\)", title_string, re.IGNORECASE)
+    match = re.search(r"\(\s*(\d+)\s*PICS?\s*\)", title_string, re.IGNORECASE)
     if match:
         try:
             return int(match.group(1))
@@ -60,21 +66,25 @@ def extract_count_from_title(title_string):
 
 
 def modify_gallery_title(original_title, date_str):
-    """Inserts the date string before '(XX PICS)' in the title."""
-    if not date_str or not original_title:
-        return original_title
-    pattern = re.compile(r"(\s*\(\s*\d+\s*PICS\s*\)\s*)$", re.IGNORECASE)
-    match = pattern.search(original_title)
+    # Remove the video phrase before adding date/pics part if present
+    title_no_video = original_title.replace(VIDEO_SKIP_PHRASE, "").strip()
+    if not title_no_video:  # Handle case where title was *only* the video phrase
+        return date_str if date_str else "video_gallery"
+
+    if not date_str:
+        return title_no_video  # Return title without video phrase if no date
+
+    pattern = re.compile(r"(\s*\(\s*\d+\s*PICS?\s*\)\s*)$", re.IGNORECASE)
+    match = pattern.search(title_no_video)
     if match:
         pics_part = match.group(1)
-        title_before_pics = original_title[: match.start()]
+        title_before_pics = title_no_video[: match.start()]
         return f"{title_before_pics.strip()} {date_str}{pics_part}"
-    else:
-        return f"{original_title.strip()} {date_str}"
+    else:  # Append date if no "(XX PICS)" found after removing video phrase
+        return f"{title_no_video.strip()} {date_str}"
 
 
 def get_base_overview_url(url_input):
-    """Prepares the base URL for overview pagination."""
     url_input = url_input.split("#")[0].split("?")[0]
     url_input = re.sub(r"page/\d+/?$", "", url_input)
     if not url_input.endswith("/"):
@@ -83,7 +93,6 @@ def get_base_overview_url(url_input):
 
 
 def count_image_files(dir_path):
-    """Counts files with common image extensions in a directory."""
     if not os.path.isdir(dir_path):
         return 0
     count = 0
@@ -99,8 +108,6 @@ def count_image_files(dir_path):
 
 
 def download_image(img_url, save_path, session):
-    """Downloads a single image. Returns True on success."""
-    # Directory check/creation is now handled *before* calling this function.
     try:
         print(f"          Attempting download: {img_url}")
         response = session.get(img_url, stream=True, timeout=REQUEST_TIMEOUT)
@@ -110,9 +117,10 @@ def download_image(img_url, save_path, session):
                 f.write(chunk)
         print(f"          SUCCESS: Saved locally to {save_path}")
         return True
+    except requests.exceptions.HTTPError as http_err:
+        print(f"          HTTP ERROR downloading {img_url}: {http_err}")
     except requests.exceptions.RequestException as e:
         print(f"          ERROR downloading {img_url}: {e}")
-    # Catch specific file errors if needed, like permissions, but Errno 2 should be gone.
     except IOError as e:
         print(f"          ERROR saving file {save_path}: {e}")
     except Exception as e:
@@ -136,7 +144,8 @@ if __name__ == "__main__":
     )
 
     try:
-        with SB(uc=True, headless=START_HEADLESS) as sb:
+        # Added incognito=True to help manage cookies/session state
+        with SB(uc=True, headless=START_HEADLESS, incognito=True) as sb:
             overview_page_num = 1
 
             # --- Outer Loop: Iterate through Overview Pages ---
@@ -150,15 +159,10 @@ if __name__ == "__main__":
 
                 try:
                     sb.open(current_overview_page_url)
-                    expected_url_base = current_overview_page_url.rstrip("/")
-                    actual_url_base = sb.get_current_url().rstrip("/")
-                    if (
-                        actual_url_base != expected_url_base
-                        and not actual_url_base.startswith(expected_url_base)
-                    ):
-                        print(
-                            f"  Redirected from expected URL. Assuming end of overview pages."
-                        )
+                    expected_path = urlparse(current_overview_page_url).path.rstrip("/")
+                    actual_path = urlparse(sb.get_current_url()).path.rstrip("/")
+                    if actual_path != expected_path:
+                        print(f"  Redirected from expected URL path. Assuming end.")
                         break
 
                     print(f"  Waiting for gallery links ('{GALLERY_LINK_SELECTOR}')")
@@ -175,7 +179,7 @@ if __name__ == "__main__":
                         )
                         break
 
-                    # --- Collect Gallery Links from THIS Overview Page ---
+                    # --- Collect Gallery Links ---
                     gallery_links_on_this_page = []
                     gallery_elements = sb.find_elements(GALLERY_LINK_SELECTOR)
                     print(
@@ -199,14 +203,16 @@ if __name__ == "__main__":
                         gallery_url = gallery_info["url"]
                         gallery_name = "untitled_gallery"
                         gallery_folder_path = None
-                        processed_or_skipped_urls.add(gallery_url)
+                        processed_or_skipped_urls.add(
+                            gallery_url
+                        )  # Mark URL once we start checking it
 
                         print(
                             f"\n    ---> Checking Gallery {i + 1}/{len(gallery_links_on_this_page)}: {gallery_url}"
                         )
 
                         try:
-                            # Step 1: Open gallery, get title, expected count, determine folder path
+                            # Step 1: Open gallery, get title, determine potential folder name
                             sb.open(gallery_url)
                             print(
                                 f"      Opened gallery page. Waiting for title ('{GALLERY_TITLE_SELECTOR}')..."
@@ -214,9 +220,18 @@ if __name__ == "__main__":
                             sb.wait_for_element_visible(
                                 GALLERY_TITLE_SELECTOR, timeout=ELEMENT_WAIT_TIMEOUT
                             )
-                            # Use the full text of the title element, assuming it contains "(XX PICS)"
                             original_title = sb.get_text(GALLERY_TITLE_SELECTOR).strip()
+                            print(f"      Original Title: '{original_title}'")
 
+                            # <<< Add Check for VIDEO_SKIP_PHRASE >>>
+                            if VIDEO_SKIP_PHRASE in original_title:
+                                print(
+                                    f"    SKIPPING: Title contains '{VIDEO_SKIP_PHRASE}'."
+                                )
+                                continue  # Skip to the next gallery URL
+                            # <<< End VIDEO Check >>>
+
+                            # Proceed with naming and other checks only if not a video
                             expected_count = extract_count_from_title(original_title)
                             formatted_date = extract_and_format_date(gallery_url)
                             modified_title = modify_gallery_title(
@@ -227,7 +242,9 @@ if __name__ == "__main__":
                                 DOWNLOAD_FOLDER, gallery_name
                             )
 
-                            print(f"      Gallery Name: '{gallery_name}'")
+                            print(
+                                f"      Gallery Name (used for folder): '{gallery_name}'"
+                            )
                             print(
                                 f"      Expected Image Count from Title: {expected_count if expected_count is not None else 'Unknown'}"
                             )
@@ -267,11 +284,8 @@ if __name__ == "__main__":
                                 )
                             # --- End Skip Logic ---
 
-                            # --- Step 3: Process Images & Pagination (Only if not skipped) ---
-                            # Flag to track if *this run* created the folder. Initialize based on initial check.
-                            folder_created_this_run = (
-                                False  # <<< Changed flag name slightly for clarity
-                            )
+                            # --- Step 3: Process Images & Pagination (Only if not skipped by VIDEO or Count check) ---
+                            folder_created_this_run = False
                             total_images_downloaded_this_run = 0
                             current_page_in_gallery = 1
 
@@ -296,190 +310,162 @@ if __name__ == "__main__":
                                     print(
                                         f"        No images present on page {current_page_in_gallery} ('{IMAGE_SELECTOR}')."
                                     )
-                                    if (
-                                        not sb.is_element_present(
-                                            GALLERY_NEXT_PAGE_SELECTOR
-                                        )
-                                        and current_page_in_gallery > 1
+                                    print(
+                                        f"        Checking for Gallery 'Next Page' ('{GALLERY_NEXT_PAGE_SELECTOR}') anyway..."
+                                    )
+                                    if not sb.is_element_visible(
+                                        GALLERY_NEXT_PAGE_SELECTOR
                                     ):
                                         print(
-                                            "        Also no 'Next' button found. Assuming end of gallery."
+                                            "        No 'Next' button found either. Assuming end of gallery."
                                         )
                                         break
-                                    # else continue below to check next page button
-
-                                image_elements = sb.find_elements(IMAGE_SELECTOR)
-                                print(
-                                    f"        Found {len(image_elements)} image elements on this page."
-                                )
-                                page_images_downloaded_this_run = 0
-
-                                for img_element in image_elements:
-                                    # --- Image Downloading ---
-                                    img_src = img_element.get_attribute("src")
-                                    if not img_src or not img_src.strip():
-                                        continue
-                                    img_src = img_src.strip()
-                                    absolute_img_url = urljoin(
-                                        sb.get_current_url(), img_src
-                                    )
-
-                                    try:  # Generate filename
-                                        filename_part = unquote(
-                                            absolute_img_url.split("/")[-1].split("?")[
-                                                0
-                                            ]
-                                        )
-                                        file_ext_lower = os.path.splitext(
-                                            filename_part
-                                        )[1].lower()
-                                        if file_ext_lower not in IMAGE_EXTENSIONS:
-                                            filename = f"{sanitize_filename(filename_part)}.jpg"
-                                        else:
-                                            filename = sanitize_filename(filename_part)
-                                        if not filename or filename.startswith("."):
-                                            raise ValueError(
-                                                "Generated invalid filename"
-                                            )
-                                    except Exception as e:
-                                        file_ext = os.path.splitext(absolute_img_url)[
-                                            1
-                                        ].lower()
-                                        if file_ext not in IMAGE_EXTENSIONS:
-                                            file_ext = ".jpg"
-                                        img_counter = (
-                                            local_file_count
-                                            + total_images_downloaded_this_run
-                                            + page_images_downloaded_this_run
-                                            + 1
-                                        )
-                                        filename = f"image_{img_counter:04d}{file_ext}"
-                                        print(
-                                            f"          Warning: Could not derive filename from URL ({e}). Using: {filename}"
-                                        )
-
-                                    save_path = os.path.join(
-                                        gallery_folder_path, filename
-                                    )
-
-                                    # --- Optimization: Skip download if file already exists ---
-                                    # Check this *before* trying to create the folder or download
-                                    if os.path.exists(save_path):
-                                        # print(f"          Skipping download: File already exists at {save_path}") # Optional: Verbose logging
-                                        continue  # Skip to next image element
-                                    # --- End Optimization ---
-
-                                    # --- Ensure directory exists BEFORE download attempt ---
-                                    # Try to create only if it didn't exist initially OR if creation wasn't flagged as done this run
-                                    if (
-                                        not folder_exists
-                                        and not folder_created_this_run
-                                    ):
-                                        try:
-                                            print(
-                                                f"        Creating folder for first image: '{gallery_folder_path}'"
-                                            )
-                                            os.makedirs(
-                                                gallery_folder_path, exist_ok=True
-                                            )
-                                            # Update flags immediately after successful creation
-                                            folder_exists = (
-                                                True  # Mark that it now exists
-                                            )
-                                            folder_created_this_run = True
-                                            print(
-                                                f"        (Saving subsequent images to this folder)"
-                                            )
-                                        except OSError as oe:
-                                            print(
-                                                f"        ERROR creating directory {gallery_folder_path}: {oe}. Skipping image download."
-                                            )
-                                            # Cannot download if dir creation failed, skip to next image
-                                            continue  # Skip this image if folder creation failed
-                                    elif not folder_exists and folder_created_this_run:
-                                        # This case shouldn't happen if logic is right, but indicates folder exists now
-                                        pass  # Folder was created earlier in this gallery's processing
-
-                                    # --- Attempt Download only if folder exists ---
-                                    if (
-                                        folder_exists
-                                    ):  # Check if folder exists (either initially or created just now)
-                                        if download_image(
-                                            absolute_img_url,
-                                            save_path,
-                                            download_session,
-                                        ):
-                                            page_images_downloaded_this_run += 1
-                                            total_images_downloaded_this_run += 1
                                     else:
                                         print(
-                                            f"          Skipping download for {filename} because directory does not exist and creation failed."
+                                            "        Next page button found, but no images on this page. Trying next page..."
                                         )
-                                    # --- End Image Downloading ---
-                                # End image loop
+                                        # Fall through to next page logic without image processing
 
-                                print(
-                                    f"        Downloaded {page_images_downloaded_this_run} new images from page {current_page_in_gallery}."
-                                )
+                                else:  # Process images if present
+                                    image_elements = sb.find_elements(IMAGE_SELECTOR)
+                                    print(
+                                        f"        Found {len(image_elements)} image elements on this page."
+                                    )
+                                    page_images_downloaded_this_run = 0
+
+                                    for img_element in image_elements:
+                                        # --- Image Downloading ---
+                                        img_src = img_element.get_attribute("src")
+                                        if not img_src or not img_src.strip():
+                                            continue
+                                        img_src = img_src.strip()
+                                        absolute_img_url = urljoin(
+                                            sb.get_current_url(), img_src
+                                        )
+
+                                        try:  # Generate filename
+                                            filename_part = unquote(
+                                                absolute_img_url.split("/")[-1].split(
+                                                    "?"
+                                                )[0]
+                                            )
+                                            file_ext_lower = os.path.splitext(
+                                                filename_part
+                                            )[1].lower()
+                                            if file_ext_lower not in IMAGE_EXTENSIONS:
+                                                filename = f"{sanitize_filename(filename_part)}.jpg"
+                                            else:
+                                                filename = sanitize_filename(
+                                                    filename_part
+                                                )
+                                            if not filename or filename.startswith("."):
+                                                raise ValueError(
+                                                    "Generated invalid filename"
+                                                )
+                                        except Exception as e:
+                                            file_ext = os.path.splitext(
+                                                absolute_img_url
+                                            )[1].lower()
+                                            if file_ext not in IMAGE_EXTENSIONS:
+                                                file_ext = ".jpg"
+                                            img_counter = (
+                                                local_file_count
+                                                + total_images_downloaded_this_run
+                                                + page_images_downloaded_this_run
+                                                + 1
+                                            )
+                                            filename = (
+                                                f"image_{img_counter:04d}{file_ext}"
+                                            )
+                                            print(
+                                                f"          Warning: Could not derive filename from URL ({e}). Using: {filename}"
+                                            )
+
+                                        save_path = os.path.join(
+                                            gallery_folder_path, filename
+                                        )
+
+                                        # Optimization: Skip download if file already exists
+                                        if os.path.exists(save_path):
+                                            continue
+
+                                        # Ensure directory exists BEFORE download attempt
+                                        current_folder_exists_check = os.path.exists(
+                                            gallery_folder_path
+                                        )
+                                        if not current_folder_exists_check:
+                                            try:
+                                                print(
+                                                    f"        Creating folder for first image: '{gallery_folder_path}'"
+                                                )
+                                                os.makedirs(
+                                                    gallery_folder_path, exist_ok=True
+                                                )
+                                                current_folder_exists_check = (
+                                                    True  # Update status
+                                                )
+                                                print(
+                                                    f"        (Saving subsequent images to this folder)"
+                                                )
+                                            except OSError as oe:
+                                                print(
+                                                    f"        ERROR creating directory {gallery_folder_path}: {oe}. Skipping image."
+                                                )
+                                                continue  # Skip this image
+
+                                        # Attempt Download only if folder exists
+                                        if current_folder_exists_check:
+                                            if download_image(
+                                                absolute_img_url,
+                                                save_path,
+                                                download_session,
+                                            ):
+                                                page_images_downloaded_this_run += 1
+                                                total_images_downloaded_this_run += 1
+                                        # --- End Image Downloading ---
+                                    # End image element loop
+
+                                    print(
+                                        f"        Downloaded {page_images_downloaded_this_run} new images from page {current_page_in_gallery}."
+                                    )
 
                                 # --- Check for GALLERY Next Page ---
                                 print(
                                     f"        Checking for Gallery 'Next Page' ('{GALLERY_NEXT_PAGE_SELECTOR}')"
                                 )
-                                # Try the more general selector first
-                                next_button_found = False
                                 if sb.is_element_visible(GALLERY_NEXT_PAGE_SELECTOR):
                                     try:
-                                        # Verify it's actually clickable/intended link (optional refinement)
                                         print(
-                                            "        Gallery 'Next Page' button found (using primary selector). Clicking..."
+                                            "        Gallery 'Next Page' button found. Clicking..."
                                         )
                                         sb.click(GALLERY_NEXT_PAGE_SELECTOR)
-                                        next_button_found = True
+                                        current_page_in_gallery += 1
+                                        print(
+                                            f"        Clicked next. Waiting for elements on gallery page {current_page_in_gallery}..."
+                                        )
                                     except Exception as click_err:
                                         print(
-                                            f"        Error clicking primary 'Next Page' button: {click_err}."
+                                            f"        Error clicking Gallery 'Next Page' button: {click_err}. Assuming end."
                                         )
-                                        # Consider trying the fallback selector if primary fails?
-
-                                # Example of trying a fallback selector (adjust if needed)
-                                # if not next_button_found:
-                                #      fallback_selector = "#post-list > div:nth-child(6) > div > b:nth-child(3) > a"
-                                #      print(f"        Checking for Gallery 'Next Page' (using fallback selector: '{fallback_selector}')")
-                                #      if sb.is_element_visible(fallback_selector):
-                                #           try:
-                                #                print("        Gallery 'Next Page' button found (using fallback selector). Clicking...")
-                                #                sb.click(fallback_selector)
-                                #                next_button_found = True
-                                #           except Exception as click_err_fallback:
-                                #                print(f"        Error clicking fallback 'Next Page' button: {click_err_fallback}.")
-
-                                if next_button_found:
-                                    current_page_in_gallery += 1
-                                    print(
-                                        f"        Clicked next. Waiting for elements on gallery page {current_page_in_gallery}..."
-                                    )
+                                        break
                                 else:
                                     print(
-                                        "        No visible 'Next Page' button found using configured selectors. Assuming end of gallery."
+                                        "        No visible 'Next Page' button found. Assuming end of gallery."
                                     )
-                                    break  # Exit pagination loop
+                                    break
                                 # --- End GALLERY Next Page Check ---
                             # --- End Innermost Loop (Gallery Pagination) ---
 
                             # --- Final logging for this gallery ---
-                            final_local_count = count_image_files(
-                                gallery_folder_path
-                            )  # Recount at the end
+                            # This block is only reached if the gallery was NOT skipped by VIDEO or Count checks
+                            final_local_count = count_image_files(gallery_folder_path)
                             print(
                                 f"    ---> Finished PROCESSING gallery '{gallery_name}'."
                             )
                             print(
                                 f"         Downloaded {total_images_downloaded_this_run} new images in this run."
                             )
-                            if os.path.isdir(
-                                gallery_folder_path
-                            ):  # Check if folder exists before counting
+                            if os.path.isdir(gallery_folder_path):
                                 print(
                                     f"         Folder '{gallery_folder_path}' now contains {final_local_count} images."
                                 )
@@ -490,16 +476,27 @@ if __name__ == "__main__":
                                     print(
                                         f"         WARNING: Final count ({final_local_count}) is less than expected ({expected_count})."
                                     )
+                            elif total_images_downloaded_this_run > 0:
+                                print(
+                                    f"         WARNING: Images were downloaded but folder '{gallery_folder_path}' cannot be confirmed."
+                                )
                             else:
                                 print(
-                                    f"         Folder '{gallery_folder_path}' was NOT created (no images downloaded)."
+                                    f"         Folder '{gallery_folder_path}' was NOT created (no images downloaded successfully)."
                                 )
 
                         except Exception as gallery_err:
+                            # Catch errors during sb.open, title fetching, or the main processing block
                             print(
                                 f"      ERROR processing gallery '{gallery_name or gallery_url}': {gallery_err}"
                             )
                             # URL already added to processed_or_skipped_urls set
+
+                        finally:
+                            # Clear cookies after processing or skipping each gallery
+                            print("      Clearing browser cookies...")
+                            sb.delete_all_cookies()
+                            # download_session.cookies.clear() # Optional
                         # --- End Inner Gallery Processing Block ---
                     # --- End Loop for Galleries on This Overview Page ---
 

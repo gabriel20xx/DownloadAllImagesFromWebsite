@@ -8,7 +8,7 @@ import re  # For regex operations
 GALLERY_OVERVIEW_BASE_URL_INPUT = "https://izispicy.com/babes/"
 GALLERY_LINK_SELECTOR = "h1.zag_block > a"
 GALLERY_TITLE_SELECTOR = "h1.zag_block"
-IMAGE_SELECTOR = "div.imgbox > a > img"
+IMAGE_SELECTOR = "div.imgbox img"
 GALLERY_NEXT_PAGE_SELECTOR = (
     "#post-list > div:nth-child(6) > div > b:nth-child(3) > a"  # From user log
 )

@@ -2,6 +2,7 @@ import os
 import requests
 from urllib.parse import urljoin, unquote, urlparse
 from bs4 import BeautifulSoup
+import yaml
 import re
 
 # --- Configuration (Using values from user log/previous context) ---
@@ -13,7 +14,7 @@ GALLERY_NEXT_PAGE_SELECTOR = (
     "#post-list > div:nth-child(6) > div > b:nth-child(3) > a"  # From user log
 )
 
-DOWNLOAD_FOLDER = "/mnt/user/Generated/Samples"
+DOWNLOAD_FOLDER = "Z:/Samples/Izispicy"
 REQUEST_TIMEOUT = 30
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff"}
 VIDEO_SKIP_PHRASE = "(VIDEO)"  # <<< Phrase to check for skipping
@@ -149,6 +150,51 @@ def get_soup(url, session, timeout=REQUEST_TIMEOUT):
 
 # --- Main Script Logic ---
 if __name__ == "__main__":
+    config_name = "config.yaml"
+    config = {}  # Initialize config as an empty dictionary
+
+    try:
+        with open(config_name, "r") as config_file:
+            loaded_config = yaml.safe_load(config_file)
+            if loaded_config:  # Ensure loaded_config is not None
+                config = loaded_config
+    except FileNotFoundError:
+        print(f"Configuration file '{config_name}' not found. Using default values.")
+    except yaml.YAMLError as e:
+        print(
+            f"Error loading configuration file '{config_name}': {e}. Using default values."
+        )
+    except Exception as e:
+        print(
+            f"An unexpected error occurred while loading config: {e}. Using default values."
+        )
+
+    # --- Apply Configuration (Loading from file, falling back to defaults) ---
+    GALLERY_OVERVIEW_BASE_URL_INPUT = config.get(
+        "GALLERY_OVERVIEW_BASE_URL_INPUT", GALLERY_OVERVIEW_BASE_URL_INPUT
+    )
+    DOWNLOAD_FOLDER = config.get("DOWNLOAD_FOLDER", DOWNLOAD_FOLDER)
+    # Ensure IMAGE_EXTENSIONS remains a set after loading from yaml (list in yaml -> set in code)
+    loaded_extensions = config.get(
+        "IMAGE_EXTENSIONS", list(IMAGE_EXTENSIONS)
+    )  # Get as list if from yaml
+    IMAGE_EXTENSIONS = (
+        set(loaded_extensions)
+        if isinstance(loaded_extensions, (list, tuple, set))
+        else set()
+    )  # Convert to set, handle unexpected types
+    VIDEO_SKIP_PHRASE = config.get("VIDEO_SKIP_PHRASE", VIDEO_SKIP_PHRASE)
+    GALLERY_LINK_SELECTOR = config.get("GALLERY_LINK_SELECTOR", GALLERY_LINK_SELECTOR)
+    GALLERY_TITLE_SELECTOR = config.get(
+        "GALLERY_TITLE_SELECTOR", GALLERY_TITLE_SELECTOR
+    )
+    IMAGE_SELECTOR = config.get("IMAGE_SELECTOR", IMAGE_SELECTOR)
+    GALLERY_NEXT_PAGE_SELECTOR = config.get(
+        "GALLERY_NEXT_PAGE_SELECTOR", GALLERY_NEXT_PAGE_SELECTOR
+    )
+    REQUEST_TIMEOUT = config.get("REQUEST_TIMEOUT", REQUEST_TIMEOUT)
+    # --- End Applying Configuration ---
+
     os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
     processed_or_skipped_urls = (
         set()

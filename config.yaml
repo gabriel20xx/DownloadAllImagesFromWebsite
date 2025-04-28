@@ -1,0 +1,35 @@
+# Configuration file for the web scraper
+
+# Base URL for the gallery overview page
+GALLERY_OVERVIEW_BASE_URL_INPUT: "https://izispicy.com/babes/"
+
+# Folder where downloaded files will be saved
+DOWNLOAD_FOLDER: "/mnt/user/Generated/Samples/Izispicy"
+
+# List of image file extensions to consider for download
+IMAGE_EXTENSIONS:
+  - .jpg
+  - .jpeg
+  - .png
+  - .gif
+  - .webp
+  - .bmp
+  - .tiff
+
+# Phrase in gallery titles to indicate skipping (e.g., for videos)
+VIDEO_SKIP_PHRASE: "(VIDEO)"
+
+# CSS selector for finding links to individual galleries on the overview page
+GALLERY_LINK_SELECTOR: "h1.zag_block > a"
+
+# CSS selector for finding the title of an individual gallery page
+GALLERY_TITLE_SELECTOR: "h1.zag_block"
+
+# CSS selector for finding image elements within a gallery page
+IMAGE_SELECTOR: "div.imgbox img"
+
+# CSS selector for finding the link to the next page on the overview page
+GALLERY_NEXT_PAGE_SELECTOR: "#post-list > div:nth-child(6) > div > b:nth-child(3) > a"
+
+# Timeout in seconds for making HTTP requests
+REQUEST_TIMEOUT: 30
